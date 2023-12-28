@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
+use kcd_rename::Mode;
 use patternscan::scan;
 use std::fs::File;
 use std::io::BufWriter;
@@ -14,13 +15,17 @@ use std::path::{Path, PathBuf};
 #[command(author = "Chung-Kuan Chen <b97b01045@gmail.com>")]
 #[command(about = "A CLI Tool to rename KISSEICOMTEC Raw Data (KCD) file", long_about = None)]
 struct Cli {
-    /// Name of the person to greet
+    /// KCD input file
     #[arg(short, long, value_name = "KCD FILE")]
     input: PathBuf,
 
-    /// Number of times to greet
+    /// Output name of KCD file
     #[arg(short, long, value_name = "OUTPUT")]
     output: PathBuf,
+
+    /// Method to move the video  (Default: Copy)
+    #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
+    mode: Mode,
 }
 
 fn get_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
@@ -108,7 +113,7 @@ fn main() -> Result<()> {
         .with_file_name(new_prefix.as_ref())
         .join(format!("{}.hdr", new_prefix));
 
-    match kcd_rename::rename_video_hdr(src_hdr, dst_hdr, &old_prefix, &new_prefix) {
+    match kcd_rename::rename_video_hdr(src_hdr, dst_hdr, &old_prefix, &new_prefix, cli.mode) {
         Err(e) => cmd.error(ErrorKind::Io, format!("{:?}", e)).exit(),
         _ => Ok(()),
     }

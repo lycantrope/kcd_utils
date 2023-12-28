@@ -1,23 +1,30 @@
+use anyhow::{Context, Result};
+use clap::ValueEnum;
+use deku::{bitvec::Msb0, prelude::*};
+use rayon::prelude::*;
 use std::{
     fs::File,
     io::{Read, Write},
     path::Path,
 };
-
-use anyhow::{Context, Result};
-use deku::{bitvec::Msb0, prelude::*};
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Mode {
+    Copy,
+    Move,
+}
 
 pub fn rename_video_hdr<P: AsRef<Path>>(
     src_hdr: P,
     dst_hdr: P,
     old_prefix: &str,
     new_prefix: &str,
+    mode: Mode,
 ) -> Result<()> {
     // video folder which contains hdr file and videos
     let dst: &Path = dst_hdr.as_ref().parent().unwrap();
 
     if !dst.is_dir() {
-        std::fs::create_dir(dst).with_context(|| "Fail to create dst")?;
+        std::fs::create_dir_all(dst).with_context(|| "Fail to create dst")?;
     }
 
     let mut input = File::open(&src_hdr).with_context(|| "Fail to open src")?;
@@ -47,7 +54,14 @@ pub fn rename_video_hdr<P: AsRef<Path>>(
         for entry in paths.filter_map(Result::ok) {
             let oldname = entry.file_stem().map(|c| c.to_string_lossy()).unwrap();
             let newname = oldname.replace(&old_prefix, &new_prefix);
-            std::fs::rename(&entry, dst.join(newname))?;
+            match mode {
+                Mode::Move => {
+                    std::fs::rename(&entry, dst.join(newname)).with_context(|| "Fail to move video")
+                }
+                Mode::Copy => std::fs::copy(&entry, dst.join(newname))
+                    .map(|_| ())
+                    .with_context(|| "Fail to copy vido"),
+            }?;
         }
     }
 
@@ -105,7 +119,7 @@ impl KCDVideoHDR {
 
     fn rename(&mut self, prefix: &str) -> Result<()> {
         let ext = self.get_file_ext().unwrap_or("avi".to_string());
-        self.data.iter_mut().enumerate().for_each(|(i, block)| {
+        self.data.par_iter_mut().enumerate().for_each(|(i, block)| {
             block.filepath = format!("{}\\{}{}.{}", prefix, prefix, i + 1, ext);
         });
         Ok(())
