@@ -1,0 +1,8 @@
+/target
+/test*
+
+*.kcd
+*.hdr
+*.log
+
+.DS_Store
