@@ -3,16 +3,22 @@ use std::{
     io::{Read, Write},
     path::Path,
 };
-
+use rayon::prelude::*;
 use anyhow::{Context, Result};
 use deku::{bitvec::Msb0, prelude::*};
+use clap::ValueEnum;
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Mode{
+    Copy,
+    Move,
+}
 
-pub fn rename_video_hdr<P: AsRef<Path>>(src_hdr: P, dst_hdr: P, prefix: &str) -> Result<()> {
+pub fn rename_video_hdr<P: AsRef<Path>>(src_hdr: P, dst_hdr: P, prefix: &str, mode:Mode) -> Result<()> {
     // video folder which contains hdr file and videos
     let dst: &Path = dst_hdr.as_ref().parent().unwrap();
 
     if !dst.is_dir() {
-        std::fs::create_dir(dst).with_context(|| "Fail to create dst")?;
+        std::fs::create_dir_all(dst).with_context(|| "Fail to create dst")?;
     }
 
     let mut input = File::open(&src_hdr).with_context(|| "Fail to open src")?;
@@ -22,7 +28,7 @@ pub fn rename_video_hdr<P: AsRef<Path>>(src_hdr: P, dst_hdr: P, prefix: &str) ->
     let (_, mut kcd) =
         KCDVideoHDR::from_bytes((&src_hdr_buf, 0)).with_context(|| "Fail to parse kcd hdr file")?;
 
-    kcd.rename(prefix, dst)?;
+    kcd.rename(prefix, dst, mode)?;
 
     let mut output = File::create(&dst_hdr).with_context(|| "Fail to create dst_p")?;
     let kcd_bytes = kcd.to_bytes()?;
@@ -80,26 +86,34 @@ impl KCDVideoHDR {
         ext.pop().map(|v| v.to_string())
     }
 
-    fn rename<P: AsRef<Path>>(&mut self, prefix: &str, folder: P) -> Result<()> {
+    fn rename<P: AsRef<Path>>(&mut self, prefix: &str, folder: P, mode:Mode) -> Result<()> {
         let ext = self.get_file_ext().unwrap_or("avi".to_string());
 
         let src_folder: &Path = folder.as_ref();
-
-        self.data.iter_mut().enumerate().try_for_each(|(i, block)| {
+        let bar = indicatif::ProgressBar::new(self.data.len() as u64);
+        self.data.par_iter_mut().enumerate().try_for_each(|(i, block)| {
+            bar.inc(1);
             let new_name = format!("{}{}.{}", prefix, i + 1, ext);
-            block.filepath = format!("{}\\{}", prefix, &new_name);
             if let Some(src) = block
-                .filepath
-                .split('\\')
-                .nth(1)
-                .map(|x| src_folder.join(x))
+            .filepath
+            .split('\\')
+            .nth(2)
+            .map(|x| src_folder.join(x))
             {
                 if src.is_file() {
+                    block.filepath = format!("{}\\{}", prefix, &new_name);
                     let dst = src.with_file_name(&new_name);
-                    std::fs::rename(&src, dst).with_context(|| "Fail to rename video")?;
+                    match mode{
+                        Mode::Copy => std::fs::copy(&src, dst).map(|_| ()).with_context(|| "Fail to move video"),
+                        Mode::Move => std::fs::rename(&src, dst).with_context(|| "Fail to copy video"),
+                    }?;
+                    
                 }
+            }else{
+                block.filepath = format!("{}\\{}", prefix, &new_name);
             }
             Ok(())
+        
         })
     }
 }
