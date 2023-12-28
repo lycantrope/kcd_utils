@@ -30,13 +30,12 @@ fn get_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
     // let reader = Cursor::new(buf);
 
     let file = File::open(p)?;
-    let reader = BufReader::with_capacity(1024, file);
+    let reader = BufReader::with_capacity(4096, file);
 
     let pattern = "4B 43 52 4D 4F 56 49 45";
     // let pattern = "45 49 56 4f 4D 52 43 4B";
 
-    let res = dbg!(scan(reader, pattern));
-    match res {
+    match scan(reader, pattern) {
         Ok(pos) if pos.len() == 1 => Ok(pos[0]),
         _ => bail!("Invalid KCD file. (no `KCRMOIVE` or multiple kcd found)"),
     }
@@ -80,13 +79,13 @@ fn main() -> Result<()> {
         cmd.error(ErrorKind::Io, "Input is not a file").exit()
     }
 
-    let file_stem = cli.input.file_stem().unwrap().to_string_lossy();
-    let prefix = cli.output.file_stem().unwrap().to_string_lossy();
+    let old_prefix = cli.input.file_stem().unwrap().to_string_lossy();
+    let new_prefix = cli.output.file_stem().unwrap().to_string_lossy();
 
-    let video_folder: PathBuf = cli.input.with_file_name(file_stem.as_ref());
+    let video_folder: PathBuf = cli.input.with_file_name(old_prefix.as_ref());
 
-    let video_hdr: PathBuf = video_folder.join(format!("{}.hdr", file_stem));
-    if !video_hdr.exists() {
+    let src_hdr: PathBuf = video_folder.join(format!("{}.hdr", old_prefix));
+    if !src_hdr.exists() {
         println!("Could not find video folder or video.hdr file!");
         println!("Only copy file to the output");
         if !cli.output.exists() {
@@ -106,10 +105,10 @@ fn main() -> Result<()> {
 
     change_kcrmovie_text(&cli.input, &cli.output, pos)?;
     let dst_hdr = video_folder
-        .with_file_name(prefix.as_ref())
-        .join(format!("{}.hdr", prefix));
-    println!("{:?}", dst_hdr.display());
-    match kcd_rename::rename_video_hdr(video_hdr, dst_hdr, &prefix) {
+        .with_file_name(new_prefix.as_ref())
+        .join(format!("{}.hdr", new_prefix));
+
+    match kcd_rename::rename_video_hdr(src_hdr, dst_hdr, &old_prefix, &new_prefix) {
         Err(e) => cmd.error(ErrorKind::Io, format!("{:?}", e)).exit(),
         _ => Ok(()),
     }
