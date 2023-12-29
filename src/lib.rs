@@ -1,16 +1,59 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use deku::{bitvec::Msb0, prelude::*};
 use rayon::prelude::*;
 use std::{
     fs::File,
-    io::{Read, Write},
-    path::Path,
+    io::{BufRead, BufReader, BufWriter, Read, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Mode {
     Copy,
     Move,
+}
+
+pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
+    let raf = raf.as_ref();
+    let kcd = kcd.as_ref().canonicalize()?;
+
+    let file = File::open(raf).with_context(|| "Input is not a file")?;
+    let mut reader = BufReader::new(file);
+    let mut header: [u8; 574] = [0; 574];
+    reader
+        .read_exact(header.as_mut())
+        .with_context(|| "Input is not a vaild RAF file")?;
+
+    if header[0..4] != [82u8, 65, 70, 0] {
+        bail!("Input is not a vaild RAF file");
+    }
+
+    let kcd_str = kcd.to_string_lossy().replace("/", "\\");
+    let kcd_bits = kcd_str.as_bytes();
+    let n_bits = kcd_bits.len();
+    if n_bits > 256 {
+        bail!("Input path of KCD file is too long (>256)");
+    }
+
+    let padding = vec![0u8; 256 - n_bits];
+    let out_file = File::create(&raf.with_extension("raf.modify"))
+        .with_context(|| "Fail to create modified RAF file")?;
+    let mut writer = BufWriter::new(out_file);
+    writer.write(&header)?;
+    writer.write(kcd_bits)?;
+    writer.write(padding.as_ref())?;
+    reader.seek_relative(256)?;
+    while let Ok(buf) = reader.fill_buf() {
+        if buf.is_empty() {
+            break;
+        }
+        let n = buf.len();
+        let res = writer.write(buf);
+        reader.consume(n);
+        res.with_context(|| "Fail to write to file")?;
+    }
+    Ok(())
 }
 
 pub fn rename_video_hdr<P: AsRef<Path>>(
@@ -51,18 +94,22 @@ pub fn rename_video_hdr<P: AsRef<Path>>(
         .unwrap();
 
     if let Ok(paths) = glob::glob(pattern.as_ref()) {
-        for entry in paths.filter_map(Result::ok) {
+        let paths: Vec<_> = paths.filter_map(Result::ok).collect();
+        let paths: Arc<[PathBuf]> = paths.into();
+        let bar: indicatif::ProgressBar = indicatif::ProgressBar::new(paths.len() as u64);
+        paths.par_iter().try_for_each(|entry| {
             let oldname = entry.file_stem().map(|c| c.to_string_lossy()).unwrap();
-            let newname = oldname.replace(&old_prefix, &new_prefix);
+            let newname = oldname.replace(old_prefix, new_prefix);
+            bar.inc(1);
             match mode {
                 Mode::Move => {
-                    std::fs::rename(&entry, dst.join(newname)).with_context(|| "Fail to move video")
+                    std::fs::rename(entry, dst.join(newname)).with_context(|| "Fail to move video")
                 }
-                Mode::Copy => std::fs::copy(&entry, dst.join(newname))
+                Mode::Copy => std::fs::copy(entry, dst.join(newname))
                     .map(|_| ())
                     .with_context(|| "Fail to copy vido"),
-            }?;
-        }
+            }
+        })?
     }
 
     Ok(())
@@ -179,6 +226,7 @@ mod tests {
         file.read_to_end(&mut data)?;
 
         let (_, kcd) = KCDVideoHDR::from_bytes((&data, 0))?;
+        println!("{:?}", kcd);
         Ok(())
     }
     #[test]
@@ -194,5 +242,13 @@ mod tests {
         out.write_all(&kcd_bytes)?;
         assert_eq!(kcd_bytes, original);
         Ok(())
+    }
+
+    #[test]
+    fn test_bar() {
+        let bar = indicatif::ProgressBar::new(1000);
+        for _ in 0..1000 {
+            bar.inc(1);
+        }
     }
 }

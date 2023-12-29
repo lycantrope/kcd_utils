@@ -333,7 +333,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kcd_rename"
+name = "kcd_utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
