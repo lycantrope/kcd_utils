@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use deku::{bitvec::Msb0, prelude::*};
+use indicatif::{ParallelProgressIterator as _, ProgressStyle};
 use rayon::prelude::*;
 use std::{
     fs::File,
@@ -12,7 +13,15 @@ pub enum Mode {
     Copy,
     Move,
 }
-
+impl AsRef<str> for Mode {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Copy => "Copy",
+            Self::Move => "Move",
+        }
+    }
+}
 pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
     let src_p = src.as_ref();
     let dst_p = dst.as_ref();
@@ -36,8 +45,24 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
         .filter_map(|s| s.filepath.split('\\').last())
         .collect();
 
-    l1.par_iter()
+    let bar_template = format!(
+        "{} videos: {}",
+        mode.as_ref(),
+        "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
+    );
+    let style = ProgressStyle::with_template(&bar_template);
+    let tasks = l1
+        .par_iter()
         .zip(l2.par_iter())
+        .progress_count(l1.len() as u64);
+
+    let tasks = if let Ok(style) = style {
+        tasks.with_style(style)
+    } else {
+        tasks
+    };
+
+    tasks
         .try_for_each(|(v1, v2)| {
             let p1 = src_p.with_file_name(v1);
             let p2 = dst_p.with_file_name(v2);
@@ -293,6 +318,8 @@ impl VideoBlock {
 }
 #[cfg(test)]
 mod tests {
+    use indicatif::{ProgressIterator, ProgressStyle};
+
     use super::*;
     use std::{
         fs::File,
@@ -326,11 +353,21 @@ mod tests {
     }
 
     #[test]
-    fn test_bar() {
-        let bar = indicatif::ProgressBar::new(1000);
-        for _ in 0..1000 {
-            bar.inc(1);
-        }
+    fn test_bar() -> anyhow::Result<()> {
+        let mode = Mode::Move;
+        let style = ProgressStyle::with_template(&format!(
+            "{} videos: {}",
+            mode.as_ref(),
+            "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
+        ))?;
+        (0..1000)
+            .into_par_iter()
+            .progress_count(1000)
+            .with_style(style)
+            .try_for_each(|_| {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                Ok(())
+            })
     }
     #[test]
     fn test_kcrmovie_position() -> Result<()> {
