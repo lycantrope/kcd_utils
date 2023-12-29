@@ -20,7 +20,7 @@ struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Utils {
-    /// Rename the KCD file and modify its assoicated HDR files.
+    /// Rename the KCD file and modify its associated HDR tag same as `output.kcd`.
     #[clap(arg_required_else_help = true)]
     Kcd {
         /// KCD input file
@@ -31,12 +31,12 @@ enum Utils {
         #[arg(short, long, value_name = "HDR FILE")]
         output: PathBuf,
 
-        /// Method to move the video  (Default: Copy)
+        /// Method to generate the KCD file  (Default: Copy)
         #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
         mode: Mode,
     },
 
-    /// Modify the Raf file to make association for a KCD file
+    /// Modify the Raf file to establish associations with a KCD file.
     #[clap(arg_required_else_help = true)]
     Raf {
         /// Specify the input RAF file
@@ -47,7 +47,7 @@ enum Utils {
         kcd: PathBuf,
     },
 
-    /// Output HDR file will be in same folder named as `prefix.hdr``.
+    /// Output HDR files named as `prefix.hdr` in the same folder.
     #[clap(arg_required_else_help = true)]
     Hdr {
         /// HDR input file
@@ -59,15 +59,18 @@ enum Utils {
         prefix: String,
     },
 
-    /// Move or Copy video based on source and target HDR file.
+    /// Move or copy videos based on source and target HDR files.
     #[clap(arg_required_else_help = true)]
     Video {
+        /// Specify a HDR file, which should be placed in the video folder
         #[arg(short, long, value_name = "SOURCE HDR FILE")]
         src: PathBuf,
 
+        /// Target HDR file, which should be placed in a folder named as HDR file
         #[arg(short, long, value_name = "TARGET HDR FILE")]
         dst: PathBuf,
 
+        /// Method to move the video  (Default: Copy)
         #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
         mode: Mode,
     },

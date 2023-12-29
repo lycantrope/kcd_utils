@@ -68,15 +68,19 @@ fn find_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
             break;
         }
         if let Ok(pos) = patternscan::scan(std::io::Cursor::new(buf), pattern) {
-            if pos.len() > 1 {
-                reader.consume(n);
-                bail!("Invalid KCD file. (no `KCRMOIVE` or multiple kcd found)");
-            } else if pos.len() == 1 {
-                res = count + pos[0];
-                break;
-            } else {
-                count += n;
-                reader.consume(n);
+            match pos.len() {
+                0 => {
+                    count += n;
+                    reader.consume(n);
+                }
+                1 => {
+                    res = count + pos[0];
+                    break;
+                }
+                _ => {
+                    reader.consume(n);
+                    bail!("Invalid KCD file. (no `KCRMOIVE` or multiple kcd found)");
+                }
             }
         }
     }
@@ -102,7 +106,7 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
     }
     let mut header = vec![0u8; pos + 16];
 
-    let in_file = File::open(&kcd).with_context(|| "Fail to open input file")?;
+    let in_file = File::open(kcd).with_context(|| "Fail to open input file")?;
     let mut reader = BufReader::new(in_file);
 
     reader.read_exact(header.as_mut())?;
