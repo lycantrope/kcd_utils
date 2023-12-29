@@ -344,7 +344,6 @@ dependencies = [
  "glob",
  "indicatif",
  "patternscan",
- "rayon",
  "regex",
 ]
 

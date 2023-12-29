@@ -15,5 +15,4 @@ deku = "0.16.0"
 glob = "0.3.1"
 indicatif = {version = "*", features = ["rayon"]}
 patternscan = "1.2.0"
-rayon = "1.8.0"
 regex = "1.10.2"

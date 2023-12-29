@@ -1,12 +1,11 @@
 use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use deku::{bitvec::Msb0, prelude::*};
-use indicatif::{ParallelProgressIterator as _, ProgressStyle};
-use rayon::prelude::*;
+use indicatif::{ProgressIterator as _, ProgressStyle};
 use std::{
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Mode {
@@ -34,15 +33,15 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
     dst_f.read_to_end(d2.as_mut())?;
     let (_, hdr1) = KCDVideoHDR::from_bytes((&d1, 0))?;
     let (_, hdr2) = KCDVideoHDR::from_bytes((&d2, 0))?;
-    let l1: Vec<&str> = hdr1
+    let l1: Vec<PathBuf> = hdr1
         .data
         .iter()
-        .filter_map(|s| s.filepath.split('\\').last())
+        .filter_map(|s| s.filepath.split('\\').last().map(|v| src_p.with_file_name(v)))
         .collect();
-    let l2: Vec<&str> = hdr2
+    let l2: Vec<PathBuf> = hdr2
         .data
         .iter()
-        .filter_map(|s| s.filepath.split('\\').last())
+        .filter_map(|s| s.filepath.split('\\').last().map(|v| dst_p.with_file_name(v)))
         .collect();
 
     let bar_template = format!(
@@ -51,10 +50,7 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
         "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
     );
     let style = ProgressStyle::with_template(&bar_template);
-    let tasks = l1
-        .par_iter()
-        .zip(l2.par_iter())
-        .progress_count(l1.len() as u64);
+    let tasks = l1.iter().zip(l2.iter()).progress_count(l1.len() as u64);
 
     let tasks = if let Ok(style) = style {
         tasks.with_style(style)
@@ -62,22 +58,20 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
         tasks
     };
 
-    tasks
-        .try_for_each(|(v1, v2)| {
-            let p1 = src_p.with_file_name(v1);
-            let p2 = dst_p.with_file_name(v2);
-            match mode {
-                Mode::Copy => std::fs::copy(p1, p2).map(|_| ()),
-                Mode::Move => {
-                    if !p2.is_file() {
-                        std::fs::rename(p1, v2)
-                    } else {
-                        Ok(())
-                    }
+
+    tasks.for_each(|(p1, p2)| {
+        match mode {
+            Mode::Copy => {
+                let _ = std::fs::copy(p1, p2).map(|_| ());
+            }
+            Mode::Move => {
+                if !p2.is_file() {
+                    let _ = std::fs::rename(p1, p2);
                 }
             }
-        })
-        .with_context(|| "Fail to copy or move the video")
+        }
+    });
+    Ok(())
 }
 
 fn find_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
@@ -268,7 +262,7 @@ impl KCDVideoHDR {
         Ok(())
     }
     fn rename(&mut self, prefix: &str) -> Result<()> {
-        self.data.par_iter_mut().for_each(|block| {
+        self.data.iter_mut().for_each(|block| {
             let filepath_s: Vec<&str> = block.filepath.split('\\').collect();
             if let Some(&old_prefix) = filepath_s.first() {
                 let new_filepath = block.filepath.replace(old_prefix, prefix);
@@ -321,7 +315,6 @@ mod tests {
     use indicatif::{ProgressIterator, ProgressStyle};
 
     use super::*;
-    use rayon::prelude::*;
 
     use std::{
         fs::File,
@@ -363,7 +356,6 @@ mod tests {
             "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
         ))?;
         (0..1000)
-            .into_par_iter()
             .progress_count(1000)
             .with_style(style)
             .try_for_each(|_| {
@@ -378,60 +370,52 @@ mod tests {
         Ok(())
     }
 
-
     #[test]
-    fn test_retrieve()->Result<()>{
-            let src = r"D:\EEG_test\D_211001-211002_Chat-Cre_Flowerpot_372_375_376_373.0001\D_211001-211002_Chat-Cre_Flowerpot_372_375_376_373.0001.hdr";
-            let dst = r"D:\EEG_test\abc.0001\abc.0001.hdr";
-            let src_p:&Path = src.as_ref();
-            let dst_p:&Path = dst.as_ref();
-        
-            let mut src_f = File::open(src_p)?;
-            let mut dst_f = File::open(dst_p)?;
-            let mut d1: Vec<u8> = Vec::new();
-            let mut d2 = Vec::new();
-            src_f.read_to_end(d1.as_mut())?;
-            dst_f.read_to_end(d2.as_mut())?;
-            let (_, hdr1) = KCDVideoHDR::from_bytes((&d1, 0))?;
-            let (_, hdr2) = KCDVideoHDR::from_bytes((&d2, 0))?;
-            let l1: Vec<&str> = hdr1
-                .data
-                .iter()
-                .filter_map(|s| s.filepath.split('\\').last())
-                .collect();
-            let l2: Vec<&str> = hdr2
-                .data
-                .iter()
-                .filter_map(|s| s.filepath.split('\\').last())
-                .collect();
-            
-            let bar_template = format!(
-                "{} videos: {}",
-                Mode::Move.as_ref(),
-                "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
-            );
-            let style = ProgressStyle::with_template(&bar_template);
-            let tasks = l1
-                .par_iter()
-                .zip(l2.par_iter())
-                .progress_count(l1.len() as u64);
-        
-            let tasks = if let Ok(style) = style {
-                tasks.with_style(style)
-            } else {
-                tasks
-            };
-        
-            tasks
-                .try_for_each(|(v1, v2)| {
-                    let p1 = src_p.with_file_name(v1);
-                    let p2 = dst_p.with_file_name(v2);
-                    dbg!(p1.is_file(), p2.is_file());
-                    Ok::<(), anyhow::Error>(())
-                })
-                .with_context(|| "Fail to copy or move the video")
-        
-        
+    fn test_retrieve() -> Result<()> {
+        let src = r"D:\EEG_test\D_211001-211002_Chat-Cre_Flowerpot_372_375_376_373.0001\D_211001-211002_Chat-Cre_Flowerpot_372_375_376_373.0001.hdr";
+        let dst = r"D:\EEG_test\abc.0001\abc.0001.hdr";
+        let src_p: &Path = src.as_ref();
+        let dst_p: &Path = dst.as_ref();
 
+        let mut src_f = File::open(src_p)?;
+        let mut dst_f = File::open(dst_p)?;
+        let mut d1: Vec<u8> = Vec::new();
+        let mut d2 = Vec::new();
+        src_f.read_to_end(d1.as_mut())?;
+        dst_f.read_to_end(d2.as_mut())?;
+        let (_, hdr1) = KCDVideoHDR::from_bytes((&d1, 0))?;
+        let (_, hdr2) = KCDVideoHDR::from_bytes((&d2, 0))?;
+        let l1: Vec<&str> = hdr1
+            .data
+            .iter()
+            .filter_map(|s| s.filepath.split('\\').last())
+            .collect();
+        let l2: Vec<&str> = hdr2
+            .data
+            .iter()
+            .filter_map(|s| s.filepath.split('\\').last())
+            .collect();
+
+        let bar_template = format!(
+            "{} videos: {}",
+            Mode::Move.as_ref(),
+            "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
+        );
+        let style = ProgressStyle::with_template(&bar_template);
+        let tasks = l1.iter().zip(l2.iter()).progress_count(l1.len() as u64);
+
+        let tasks = if let Ok(style) = style {
+            tasks.with_style(style)
+        } else {
+            tasks
+        };
+
+        tasks.for_each(|(v1, v2)| {
+            dbg!((v1, v2));
+            let p1 = src_p.parent().unwrap().join(v1);
+            let p2 = dst_p.parent().unwrap().join(v2);
+            dbg!(p1.is_file(), p2);
+        });
+        Ok(())
     }
 }
