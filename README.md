@@ -40,7 +40,7 @@ kcd_utils <COMMAND>
   ```
 
   - `--input`: KCD input file.
-  - `--output`: Output name of the KCD file.
+  - `--source`: HDR file to make association.
   - `--mode`: Method to generate the KCD file (Default: Copy).
 
 - **Raf: Modify RAF File**
@@ -53,11 +53,11 @@ kcd_utils <COMMAND>
 
 - **Hdr: Output HDR Files**
   ```bash
-  kcd_utils hdr --input <HDR FILE> --prefix <PREFIX>
+  kcd_utils hdr --input <HDR FILE> --label <LABEL>
   ```
 
-  - `--input`: HDR input file.
-  - `--prefix`: Prefix for new HDR files as well as video prefix.
+  - `--input`: Specify the input HDR file.
+  - `--label`: Specify the label for new HDR file.
 
 - **Video: Move or Copy Videos**
   ```bash
@@ -67,6 +67,17 @@ kcd_utils <COMMAND>
   - `--src`: Specify a HDR file, which should be placed in the video folder.
   - `--dst`: Target HDR file, which should be placed in a folder named as HDR file.
   - `--mode`: Method to move the video (Default: Copy).
+
+
+- **Clone: Clone entire KCD file and Videos**
+  ```bash
+  kcd_utils clone --src <SOURCE HDR FILE> --dst <TARGET HDR FILE> [--mode <MODE>]
+  ```
+
+  - `--src`: Specify the input KCD file.
+  - `--label`: Specify the label for cloned KCD, HDR and video files.
+  - `--mode`: Method to move the video (Default: Copy).
+
 
 - **Help: Print Help**
   ```bash

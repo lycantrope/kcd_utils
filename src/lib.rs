@@ -36,12 +36,22 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
     let l1: Vec<PathBuf> = hdr1
         .data
         .iter()
-        .filter_map(|s| s.filepath.split('\\').last().map(|v| src_p.with_file_name(v)))
+        .filter_map(|s| {
+            s.filepath
+                .split('\\')
+                .last()
+                .map(|v| src_p.with_file_name(v))
+        })
         .collect();
     let l2: Vec<PathBuf> = hdr2
         .data
         .iter()
-        .filter_map(|s| s.filepath.split('\\').last().map(|v| dst_p.with_file_name(v)))
+        .filter_map(|s| {
+            s.filepath
+                .split('\\')
+                .last()
+                .map(|v| dst_p.with_file_name(v))
+        })
         .collect();
 
     let bar_template = format!(
@@ -58,16 +68,13 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
         tasks
     };
 
-
-    tasks.for_each(|(p1, p2)| {
-        match mode {
-            Mode::Copy => {
-                let _ = std::fs::copy(p1, p2).map(|_| ());
-            }
-            Mode::Move => {
-                if !p2.is_file() {
-                    let _ = std::fs::rename(p1, p2);
-                }
+    tasks.for_each(|(p1, p2)| match mode {
+        Mode::Copy => {
+            let _ = std::fs::copy(p1, p2).map(|_| ());
+        }
+        Mode::Move => {
+            if !p2.is_file() {
+                let _ = std::fs::rename(p1, p2);
             }
         }
     });
@@ -212,7 +219,7 @@ pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
     Ok(())
 }
 
-pub fn modify_video_hdr<P: AsRef<Path>>(hdr: P, prefix: &str) -> Result<()> {
+pub fn modify_video_hdr<P: AsRef<Path>>(hdr: P, prefix: &str) -> Result<PathBuf> {
     // video folder which contains hdr file and videos
     let hdr = hdr.as_ref();
     let mut input = File::open(hdr).with_context(|| "Fail to open hdr file")?;
@@ -224,17 +231,14 @@ pub fn modify_video_hdr<P: AsRef<Path>>(hdr: P, prefix: &str) -> Result<()> {
 
     hdr_data.rename(prefix)?;
 
-    let new_hdr = &hdr.with_extension(format!("{}.hdr", prefix));
+    let new_hdr = &hdr.with_file_name(format!("{}.hdr", prefix));
 
     let mut output = File::create(new_hdr)
         .with_context(|| format!("Fail to create new hdr file: {}", new_hdr.display()))?;
     let kcd_bytes = hdr_data.to_bytes()?;
     output.write_all(&kcd_bytes)?;
-    println!(
-        "New HDR file was save as:{}",
-        &new_hdr.with_file_name(format!("{}.hdr", &prefix)).display()
-    );
-    Ok(())
+    println!("New HDR file was save as:{}", new_hdr.display());
+    Ok(new_hdr.to_path_buf())
 }
 
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
@@ -361,8 +365,8 @@ mod tests {
             mode.as_ref(),
             "{bar:80.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]"
         ))?;
-        (0..1000)
-            .progress_count(1000)
+        (0..100)
+            .progress_count(100)
             .with_style(style)
             .try_for_each(|_| {
                 std::thread::sleep(std::time::Duration::from_millis(10));

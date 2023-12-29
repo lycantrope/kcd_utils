@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 use kcd_utils::{modify_kcrmovie_text, modify_raf_file, modify_video_hdr, move_videos, Mode};
@@ -23,13 +23,13 @@ enum Utils {
     /// Rename the KCD file and modify its associated HDR tag same as `output.kcd`.
     #[clap(arg_required_else_help = true)]
     Kcd {
-        /// KCD input file
-        #[arg(short, long, value_name = "KCD FILE")]
+        /// Specify the input KCD file.
+        #[arg(short, long, value_name = "*.KCD FILE")]
         input: PathBuf,
 
-        /// Output name of KCD file
+        /// Specify the HDR file to establish associations with new KCD file
         #[arg(short, long, value_name = "HDR FILE")]
-        output: PathBuf,
+        source: PathBuf,
 
         /// Method to generate the KCD file  (Default: Copy)
         #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
@@ -50,13 +50,13 @@ enum Utils {
     /// Output HDR files named as `prefix.hdr` in the same folder.
     #[clap(arg_required_else_help = true)]
     Hdr {
-        /// HDR input file
+        /// Specify the input HDR file.
         #[arg(short, long, value_name = "HDR FILE")]
         input: PathBuf,
 
-        /// Prefix for new HDR file as well as video prefix
+        /// Specify the text for labeling new HDR file.
         #[arg(short, long)]
-        prefix: String,
+        label: String,
     },
 
     /// Move or copy videos based on source and target HDR files.
@@ -74,6 +74,21 @@ enum Utils {
         #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
         mode: Mode,
     },
+    /// Clone existing KCD and videos into new labeled KCD file
+    #[clap(arg_required_else_help = true)]
+    Clone {
+        /// Specify the input KCD file.
+        #[arg(short, long, value_name = "KCD FILE")]
+        input: PathBuf,
+
+        /// Specify the label for cloned KCD, HDR and video files.
+        #[arg(short, long)]
+        label: String,
+
+        /// Method to generate the KCD and videos file  (Default: Copy)
+        #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
+        mode: Mode,
+    },
 }
 
 fn main() -> Result<()> {
@@ -82,12 +97,46 @@ fn main() -> Result<()> {
     let res = match cli.subcommands {
         Utils::Kcd {
             input,
-            output,
+            source,
             mode,
-        } => modify_kcrmovie_text(input, output, mode),
+        } => modify_kcrmovie_text(input, source, mode),
         Utils::Raf { input, kcd } => modify_raf_file(input, kcd),
-        Utils::Hdr { input, prefix } => modify_video_hdr(input, &prefix),
+        Utils::Hdr {
+            input,
+            label: prefix,
+        } => modify_video_hdr(input, &prefix).map(|_| ()),
         Utils::Video { src, dst, mode } => move_videos(src, dst, mode),
+        Utils::Clone { input, label, mode } => {
+            let kcd = input;
+            if !kcd.is_file() {
+                bail!("KCD was not a file. Abort the process")
+            }
+
+            let old_tag = kcd.file_stem().map(|x| x.to_string_lossy()).unwrap();
+            let hdr = kcd
+                .with_file_name(old_tag.as_ref())
+                .join(format!("{}.hdr", &old_tag));
+
+            if !hdr.is_file() {
+                bail!("HDR was not existed. Abort the copy process")
+            }
+
+            let cwd = kcd.parent().unwrap();
+            let new_video_folder = cwd.join(&label);
+            let _ = std::fs::create_dir(&new_video_folder);
+
+            let new_hdr = modify_video_hdr(&hdr, &label)?;
+
+            std::fs::rename(
+                &new_hdr,
+                new_video_folder.join(new_hdr.file_name().unwrap()),
+            )?;
+
+            // Always use Copy to avoid trouble
+            modify_kcrmovie_text(&kcd, &new_hdr, Mode::Copy)?;
+
+            move_videos(&hdr, &new_hdr, mode)
+        }
     };
 
     match res {
