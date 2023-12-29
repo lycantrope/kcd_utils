@@ -13,6 +13,48 @@ pub enum Mode {
     Move,
 }
 
+pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
+    let src_p = src.as_ref();
+    let dst_p = dst.as_ref();
+
+    let mut src_f = File::open(src_p)?;
+    let mut dst_f = File::open(dst_p)?;
+    let mut d1: Vec<u8> = Vec::new();
+    let mut d2 = Vec::new();
+    src_f.read_to_end(d1.as_mut())?;
+    dst_f.read_to_end(d2.as_mut())?;
+    let (_, hdr1) = KCDVideoHDR::from_bytes((&d1, 0))?;
+    let (_, hdr2) = KCDVideoHDR::from_bytes((&d2, 0))?;
+    let l1: Vec<&str> = hdr1
+        .data
+        .iter()
+        .filter_map(|s| s.filepath.split('\\').last())
+        .collect();
+    let l2: Vec<&str> = hdr2
+        .data
+        .iter()
+        .filter_map(|s| s.filepath.split('\\').last())
+        .collect();
+
+    l1.par_iter()
+        .zip(l2.par_iter())
+        .try_for_each(|(v1, v2)| {
+            let p1 = src_p.with_file_name(v1);
+            let p2 = dst_p.with_file_name(v2);
+            match mode {
+                Mode::Copy => std::fs::copy(p1, p2).map(|_| ()),
+                Mode::Move => {
+                    if p2.is_file() {
+                        std::fs::rename(p1, v2)
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
+        })
+        .with_context(|| "Fail to copy or move the video")
+}
+
 fn find_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
     let file = File::open(p)?;
     let mut reader = BufReader::new(file);
@@ -171,13 +213,13 @@ struct KCDVideoHDR {
     #[deku(bytes_read = "4")]
     header: Vec<u8>,
     #[deku(bytes = "4")]
-    count: u32,
+    pub count: u32,
     #[deku(
         bytes_read = "292 * count",
         map = "KCDVideoHDR::try_read_video_block",
         writer = "KCDVideoHDR::try_write_video_block(deku::output, &self.data)"
     )]
-    data: Vec<VideoBlock>,
+    pub data: Vec<VideoBlock>,
 }
 
 impl KCDVideoHDR {

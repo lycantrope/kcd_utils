@@ -1,7 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use kcd_utils::{modify_kcrmovie_text, modify_raf_file, modify_video_hdr, Mode};
+use kcd_utils::{modify_kcrmovie_text, modify_raf_file, modify_video_hdr, move_videos, Mode};
 use std::path::PathBuf;
 
 /// Simple program to greet a person
@@ -20,17 +20,6 @@ struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Utils {
-    /// Modify the Raf file to make association for a KCD file
-    #[clap(arg_required_else_help = true)]
-    Raf {
-        /// Specify the input RAF file
-        #[clap(short, long, value_name = "RAF FILE")]
-        input: PathBuf,
-        /// Specify the KCD file for association.
-        #[clap(short, long, value_name = "KCD FILE")]
-        kcd: PathBuf,
-    },
-
     /// Rename the KCD file and modify its assoicated HDR files.
     #[clap(arg_required_else_help = true)]
     Kcd {
@@ -46,6 +35,18 @@ enum Utils {
         #[arg(short, long, value_enum, value_name ="MODE", default_value_t  = Mode::Copy)]
         mode: Mode,
     },
+
+    /// Modify the Raf file to make association for a KCD file
+    #[clap(arg_required_else_help = true)]
+    Raf {
+        /// Specify the input RAF file
+        #[clap(short, long, value_name = "RAF FILE")]
+        input: PathBuf,
+        /// Specify the KCD file for association.
+        #[clap(short, long, value_name = "KCD FILE")]
+        kcd: PathBuf,
+    },
+
     /// Output HDR file will be in same folder named as `prefix.hdr``.
     #[clap(arg_required_else_help = true)]
     Hdr {
@@ -58,7 +59,7 @@ enum Utils {
         prefix: String,
     },
 
-    /// Move video based on hdr files.
+    /// Move or Copy video based on source and target HDR file.
     #[clap(arg_required_else_help = true)]
     Video {
         #[arg(short, long, value_name = "SOURCE HDR FILE")]
@@ -83,10 +84,7 @@ fn main() -> Result<()> {
         } => modify_kcrmovie_text(input, output, mode),
         Utils::Raf { input, kcd } => modify_raf_file(input, kcd),
         Utils::Hdr { input, prefix } => modify_video_hdr(input, &prefix),
-        Utils::Video { src, dst, mode } => {
-            let _ = (src, dst, mode);
-            bail!("This function is not implemented")
-        }
+        Utils::Video { src, dst, mode } => move_videos(src, dst, mode),
     };
 
     match res {
