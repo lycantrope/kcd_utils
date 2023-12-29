@@ -71,6 +71,12 @@ pub fn move_videos<P: AsRef<Path>>(src: P, dst: P, mode: Mode) -> Result<()> {
             }
         }
     });
+
+    println!(
+        "Videos were renamed and {}d in: {}",
+        mode.as_ref().to_lowercase(),
+        dst_p.parent().unwrap().display(),
+    );
     Ok(())
 }
 
@@ -153,7 +159,7 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
     }
     match mode {
         Mode::Move => {
-            std::fs::remove_file(kcd).with_context(|| "Fail to remvoe original KCD file")?
+            std::fs::remove_file(kcd).with_context(|| "Fail to remove original KCD file")?
         }
         Mode::Copy => (),
     }
