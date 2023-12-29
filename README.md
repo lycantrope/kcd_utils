@@ -18,7 +18,7 @@ Ensure that you have [Rust](https://www.rust-lang.org/tools/install) installed o
 
     ```bash
     cd kcd_utils
-    cargo install
+    cargo install --path .
     ```
 3. [Alternative] Install the kcd_utils from github url.
     ```bash
