@@ -328,7 +328,7 @@ mod tests {
             bar.inc(1);
         }
     }
-
+    #[test]
     fn test_kcrmovie_position() -> Result<()> {
         let pos = find_kcrmovie_position("./test.0001.kcd")?;
         println!("{pos}");
