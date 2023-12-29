@@ -5,13 +5,94 @@ use rayon::prelude::*;
 use std::{
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::Path,
 };
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum Mode {
     Copy,
     Move,
+}
+
+fn find_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
+    let file = File::open(p)?;
+    let mut reader = BufReader::new(file);
+
+    let pattern = "4B 43 52 4D 4F 56 49 45";
+    let mut count = 0;
+    let mut res = 0;
+    while let Ok(buf) = reader.fill_buf() {
+        let n = buf.len();
+        if n == 0 {
+            break;
+        }
+        if let Ok(pos) = patternscan::scan(std::io::Cursor::new(buf), pattern) {
+            if pos.len() > 1 {
+                reader.consume(n);
+                bail!("Invalid KCD file. (no `KCRMOIVE` or multiple kcd found)");
+            } else if pos.len() == 1 {
+                res = count + pos[0];
+                break;
+            } else {
+                count += n;
+                reader.consume(n);
+            }
+        }
+    }
+    Ok(res)
+}
+
+pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Result<()> {
+    let kcd: &Path = kcd.as_ref();
+    let hdr: &Path = hdr.as_ref();
+
+    let file_stem = hdr
+        .file_stem()
+        .with_context(|| format!("output is not a valid name: {}", hdr.display()))?
+        .to_string_lossy();
+
+    let pos = find_kcrmovie_position(kcd)
+        .with_context(|| format!("Input is not a valid kcd file: {}", kcd.display()))?;
+
+    let hdr_tag: String = format!("{}\\{}.hdr", file_stem, file_stem);
+    let hdr_buf = hdr_tag.as_bytes();
+    if hdr_buf.len() > 256 {
+        bail!("output name is too long, please reduce to < 120 charaters");
+    }
+    let mut header = vec![0u8; pos + 16];
+
+    let in_file = File::open(&kcd).with_context(|| "Fail to open input file")?;
+    let mut reader = BufReader::new(in_file);
+
+    reader.read_exact(header.as_mut())?;
+
+    let mut writer = BufWriter::new(File::create(kcd.with_extension(".kcd.modify"))?);
+
+    writer.write_all(&header)?;
+
+    let padding = vec![0u8; 256 - hdr_buf.len()];
+
+    // wrote new hdr path into binary file
+    writer.write_all(hdr_buf)?;
+
+    writer.write_all(&padding)?;
+
+    reader.seek_relative(256)?;
+    while let Ok(buf) = reader.fill_buf() {
+        if buf.is_empty() {
+            break;
+        }
+        let n = buf.len();
+        let res = writer.write(buf);
+        reader.consume(n);
+        res.with_context(|| "Fail to write to file")?;
+    }
+    match mode {
+        Mode::Move => {
+            std::fs::remove_file(kcd).with_context(|| "Fail to remvoe original KCD file")?
+        }
+        Mode::Copy => (),
+    }
+    Ok(())
 }
 
 pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
@@ -29,7 +110,7 @@ pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
         bail!("Input is not a vaild RAF file");
     }
 
-    let kcd_str = kcd.to_string_lossy().replace("/", "\\");
+    let kcd_str = kcd.to_string_lossy().replace('/', "\\");
     let kcd_bits = kcd_str.as_bytes();
     let n_bits = kcd_bits.len();
     if n_bits > 256 {
@@ -37,12 +118,12 @@ pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
     }
 
     let padding = vec![0u8; 256 - n_bits];
-    let out_file = File::create(&raf.with_extension("raf.modify"))
+    let out_file = File::create(raf.with_extension("raf.modify"))
         .with_context(|| "Fail to create modified RAF file")?;
     let mut writer = BufWriter::new(out_file);
-    writer.write(&header)?;
-    writer.write(kcd_bits)?;
-    writer.write(padding.as_ref())?;
+    writer.write_all(&header)?;
+    writer.write_all(kcd_bits)?;
+    writer.write_all(padding.as_ref())?;
     reader.seek_relative(256)?;
     while let Ok(buf) = reader.fill_buf() {
         if buf.is_empty() {
@@ -53,65 +134,35 @@ pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
         reader.consume(n);
         res.with_context(|| "Fail to write to file")?;
     }
+    println!(
+        "New RAF file was save as:{}",
+        &raf.with_extension("raf.modify").display()
+    );
     Ok(())
 }
 
-pub fn rename_video_hdr<P: AsRef<Path>>(
-    src_hdr: P,
-    dst_hdr: P,
-    old_prefix: &str,
-    new_prefix: &str,
-    mode: Mode,
-) -> Result<()> {
+pub fn modify_video_hdr<P: AsRef<Path>>(hdr: P, prefix: &str) -> Result<()> {
     // video folder which contains hdr file and videos
-    let dst: &Path = dst_hdr.as_ref().parent().unwrap();
+    let hdr = hdr.as_ref();
+    let mut input = File::open(hdr).with_context(|| "Fail to open hdr file")?;
+    let mut buf: Vec<u8> = Vec::new();
+    input.read_to_end(buf.as_mut())?;
 
-    if !dst.is_dir() {
-        std::fs::create_dir_all(dst).with_context(|| "Fail to create dst")?;
-    }
+    let (_, mut hdr_data) =
+        KCDVideoHDR::from_bytes((&buf, 0)).with_context(|| "Fail to parse kcd hdr file")?;
 
-    let mut input = File::open(&src_hdr).with_context(|| "Fail to open src")?;
-    let mut src_hdr_buf: Vec<u8> = Vec::new();
-    input.read_to_end(&mut src_hdr_buf)?;
+    hdr_data.rename(prefix)?;
 
-    let (_, mut kcd) =
-        KCDVideoHDR::from_bytes((&src_hdr_buf, 0)).with_context(|| "Fail to parse kcd hdr file")?;
+    let new_hdr = &hdr.with_extension(format!("{}.hdr", prefix));
 
-    let ext = kcd.get_file_ext().unwrap();
-    kcd.rename(new_prefix)?;
-    let mut output = File::create(&dst_hdr).with_context(|| "Fail to create dst_p")?;
-    let kcd_bytes = kcd.to_bytes()?;
+    let mut output = File::create(new_hdr)
+        .with_context(|| format!("Fail to create new hdr file: {}", new_hdr.display()))?;
+    let kcd_bytes = hdr_data.to_bytes()?;
     output.write_all(&kcd_bytes)?;
-
-    let pattern = src_hdr
-        .as_ref()
-        .parent()
-        .map(|p| {
-            p.join(format!("{}*.{}", &old_prefix, &ext))
-                .to_string_lossy()
-                .to_string()
-        })
-        .unwrap();
-
-    if let Ok(paths) = glob::glob(pattern.as_ref()) {
-        let paths: Vec<_> = paths.filter_map(Result::ok).collect();
-        let paths: Arc<[PathBuf]> = paths.into();
-        let bar: indicatif::ProgressBar = indicatif::ProgressBar::new(paths.len() as u64);
-        paths.par_iter().try_for_each(|entry| {
-            let oldname = entry.file_stem().map(|c| c.to_string_lossy()).unwrap();
-            let newname = oldname.replace(old_prefix, new_prefix);
-            bar.inc(1);
-            match mode {
-                Mode::Move => {
-                    std::fs::rename(entry, dst.join(newname)).with_context(|| "Fail to move video")
-                }
-                Mode::Copy => std::fs::copy(entry, dst.join(newname))
-                    .map(|_| ())
-                    .with_context(|| "Fail to copy vido"),
-            }
-        })?
-    }
-
+    println!(
+        "New HDR file was save as:{}",
+        &new_hdr.with_file_name(format!("{}.hdr", &prefix)).display()
+    );
     Ok(())
 }
 
@@ -145,29 +196,13 @@ impl KCDVideoHDR {
         }
         Ok(())
     }
-    fn get_file_ext(&self) -> Option<String> {
-        let mut ext: Vec<_> = self
-            .data
-            .iter()
-            .take(2)
-            .filter_map(
-                |VideoBlock {
-                     _head,
-                     filepath,
-                     _padding,
-                 }| {
-                    let p: &Path = filepath.as_ref();
-                    p.extension().map(|ext| ext.to_string_lossy())
-                },
-            )
-            .collect();
-        ext.pop().map(|v| v.to_string())
-    }
-
     fn rename(&mut self, prefix: &str) -> Result<()> {
-        let ext = self.get_file_ext().unwrap_or("avi".to_string());
-        self.data.par_iter_mut().enumerate().for_each(|(i, block)| {
-            block.filepath = format!("{}\\{}{}.{}", prefix, prefix, i + 1, ext);
+        self.data.par_iter_mut().for_each(|block| {
+            let filepath_s: Vec<&str> = block.filepath.split('\\').collect();
+            if let Some(&old_prefix) = filepath_s.first() {
+                let new_filepath = block.filepath.replace(old_prefix, prefix);
+                block.filepath = new_filepath;
+            }
         });
         Ok(())
     }
@@ -250,5 +285,11 @@ mod tests {
         for _ in 0..1000 {
             bar.inc(1);
         }
+    }
+
+    fn test_kcrmovie_position() -> Result<()> {
+        let pos = find_kcrmovie_position("./test.0001.kcd")?;
+        println!("{pos}");
+        Ok(())
     }
 }
