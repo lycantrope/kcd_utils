@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn read_hdr() -> anyhow::Result<()> {
-        let p = "/Users/chungkuanchen/Projects/kcd_rename/16-1_basal_nos-m4_230925-230927_3487-3488.0001.hdr";
+        let p = "./16-1_basal_nos-m4_230925-230927_3487-3488.0001.hdr";
         let mut file = File::open(p)?;
         let mut data: Vec<u8> = Vec::new();
         file.read_to_end(&mut data)?;
@@ -266,7 +266,7 @@ mod tests {
     }
     #[test]
     fn write_to_hdr() -> anyhow::Result<()> {
-        let p = "/Users/chungkuanchen/Projects/kcd_rename/16-1_basal_nos-m4_230925-230927_3487-3488.0001.hdr";
+        let p = "./16-1_basal_nos-m4_230925-230927_3487-3488.0001.hdr";
         let mut file = File::open(p)?;
         let mut original: Vec<u8> = Vec::new();
         file.read_to_end(&mut original)?;
