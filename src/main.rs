@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueHint};
 use kcd_utils::{
     clone_kcd_with_videos, modify_kcrmovie_text, modify_raf_file, modify_video_hdr, move_videos,
     Mode,
@@ -27,11 +27,11 @@ enum Utils {
     #[clap(arg_required_else_help = true)]
     Kcd {
         /// Specify the input KCD file.
-        #[arg(short, long, value_name = "*.KCD FILE")]
+        #[arg(short, long, value_name = "*.KCD FILE", value_hint = ValueHint::FilePath)]
         input: PathBuf,
 
         /// Specify the HDR file to establish associations with new KCD file
-        #[arg(short, long, value_name = "HDR FILE")]
+        #[arg(short, long, value_name = "HDR FILE", value_hint = ValueHint::FilePath)]
         source: PathBuf,
 
         /// Method to generate the KCD file  (Default: Copy)
@@ -43,10 +43,10 @@ enum Utils {
     #[clap(arg_required_else_help = true)]
     Raf {
         /// Specify the input RAF file
-        #[clap(short, long, value_name = "RAF FILE")]
+        #[clap(short, long, value_name = "RAF FILE", value_hint = ValueHint::FilePath)]
         input: PathBuf,
         /// Specify the KCD file for association.
-        #[clap(short, long, value_name = "KCD FILE")]
+        #[clap(short, long, value_name = "KCD FILE", value_hint = ValueHint::FilePath)]
         kcd: PathBuf,
     },
 
@@ -54,7 +54,7 @@ enum Utils {
     #[clap(arg_required_else_help = true)]
     Hdr {
         /// Specify the input HDR file.
-        #[arg(short, long, value_name = "HDR FILE")]
+        #[arg(short, long, value_name = "HDR FILE", value_hint = ValueHint::FilePath)]
         input: PathBuf,
 
         /// Specify the text for labeling new HDR file.
@@ -66,11 +66,11 @@ enum Utils {
     #[clap(arg_required_else_help = true)]
     Video {
         /// Specify a HDR file, which should be placed in the video folder
-        #[arg(short, long, value_name = "SOURCE HDR FILE")]
+        #[arg(short, long, value_name = "SOURCE HDR FILE", value_hint = ValueHint::FilePath)]
         src: PathBuf,
 
         /// Target HDR file, which should be placed in a folder named as HDR file
-        #[arg(short, long, value_name = "TARGET HDR FILE")]
+        #[arg(short, long, value_name = "TARGET HDR FILE", value_hint = ValueHint::FilePath)]
         dst: PathBuf,
 
         /// Method to move the video  (Default: Copy)
@@ -81,7 +81,7 @@ enum Utils {
     #[clap(arg_required_else_help = true)]
     Clone {
         /// Specify the input KCD file.
-        #[arg(short, long, value_name = "KCD FILE")]
+        #[arg(short, long, value_name = "KCD FILE", value_hint = ValueHint::FilePath)]
         input: PathBuf,
 
         /// Specify the label for cloned KCD, HDR and video files.
