@@ -1,7 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
-use kcd_utils::{modify_kcrmovie_text, modify_raf_file, modify_video_hdr, move_videos, Mode};
+use kcd_utils::{
+    clone_kcd_with_videos, modify_kcrmovie_text, modify_raf_file, modify_video_hdr, move_videos,
+    Mode,
+};
 use std::path::PathBuf;
 
 /// Simple program to greet a person
@@ -106,37 +109,7 @@ fn main() -> Result<()> {
             label: prefix,
         } => modify_video_hdr(input, &prefix).map(|_| ()),
         Utils::Video { src, dst, mode } => move_videos(src, dst, mode),
-        Utils::Clone { input, label, mode } => {
-            let kcd = input;
-            if !kcd.is_file() {
-                bail!("KCD was not a file. Abort the process")
-            }
-
-            let old_tag = kcd.file_stem().map(|x| x.to_string_lossy()).unwrap();
-            let hdr = kcd
-                .with_file_name(old_tag.as_ref())
-                .join(format!("{}.hdr", &old_tag));
-
-            if !hdr.is_file() {
-                bail!("HDR was not existed. Abort the copy process")
-            }
-
-            let cwd = kcd.parent().unwrap();
-            let new_video_folder = cwd.join(&label);
-            let _ = std::fs::create_dir(&new_video_folder);
-
-            let new_hdr = modify_video_hdr(&hdr, &label)?;
-
-            std::fs::rename(
-                &new_hdr,
-                new_video_folder.join(new_hdr.file_name().unwrap()),
-            )?;
-
-            // Always use Copy to avoid trouble
-            modify_kcrmovie_text(&kcd, &new_hdr, Mode::Copy)?;
-
-            move_videos(&hdr, &new_hdr, mode)
-        }
+        Utils::Clone { input, label, mode } => clone_kcd_with_videos(input, label, mode),
     };
 
     match res {

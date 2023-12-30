@@ -241,6 +241,30 @@ pub fn modify_video_hdr<P: AsRef<Path>>(hdr: P, prefix: &str) -> Result<PathBuf>
     Ok(new_hdr.to_path_buf())
 }
 
+pub fn clone_kcd_with_videos(input: PathBuf, label: String, mode: Mode) -> Result<()> {
+    let kcd = input;
+    if !kcd.is_file() {
+        bail!("KCD was not a file. Abort the process")
+    }
+    let old_tag = kcd.file_stem().map(|x| x.to_string_lossy()).unwrap();
+    let hdr = kcd
+        .with_file_name(old_tag.as_ref())
+        .join(format!("{}.hdr", &old_tag));
+    if !hdr.is_file() {
+        bail!("HDR was not existed. Abort the copy process")
+    }
+    let cwd = kcd.parent().unwrap();
+    let new_video_folder = cwd.join(&label);
+    let _ = std::fs::create_dir(&new_video_folder);
+    let new_hdr = modify_video_hdr(&hdr, &label)?;
+    std::fs::rename(
+        &new_hdr,
+        new_video_folder.join(new_hdr.file_name().unwrap()),
+    )?;
+    modify_kcrmovie_text(&kcd, &new_hdr, Mode::Copy)?;
+    move_videos(&hdr, &new_hdr, mode)
+}
+
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
 struct KCDVideoHDR {
     #[deku(bytes_read = "4")]
@@ -272,6 +296,9 @@ impl KCDVideoHDR {
         Ok(())
     }
     fn rename(&mut self, prefix: &str) -> Result<()> {
+        if prefix.len() > 120 {
+            bail!("Prefix is too long (<= 120 charaters")
+        }
         self.data.iter_mut().for_each(|block| {
             let filepath_s: Vec<&str> = block.filepath.split('\\').collect();
             if let Some(&old_prefix) = filepath_s.first() {
