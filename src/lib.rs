@@ -119,7 +119,7 @@ fn find_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
     Ok(res)
 }
 
-pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Result<()> {
+pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Result<PathBuf> {
     let kcd: &Path = kcd.as_ref();
     let hdr: &Path = hdr.as_ref();
 
@@ -143,7 +143,8 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
 
     reader.read_exact(header.as_mut())?;
 
-    let mut writer = BufWriter::new(File::create(kcd.with_extension(".kcd.modify"))?);
+    let out_kcd = kcd.with_extension("kcd.modify");
+    let mut writer = BufWriter::new(File::create(&out_kcd)?);
 
     writer.write_all(&header)?;
 
@@ -155,6 +156,7 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
     writer.write_all(&padding)?;
 
     reader.seek_relative(256)?;
+    
     while let Ok(buf) = reader.fill_buf() {
         if buf.is_empty() {
             break;
@@ -166,11 +168,11 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
     }
     match mode {
         Mode::Move => {
-            std::fs::remove_file(kcd).with_context(|| "Fail to remove original KCD file")?
+            std::fs::remove_file(kcd).with_context(|| "Fail to remove original KCD file")?;
         }
         Mode::Copy => (),
     }
-    Ok(())
+    Ok(out_kcd)
 }
 
 pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
@@ -261,7 +263,8 @@ pub fn clone_kcd_with_videos(input: PathBuf, label: String, mode: Mode) -> Resul
         &new_hdr,
         new_video_folder.join(new_hdr.file_name().unwrap()),
     )?;
-    modify_kcrmovie_text(&kcd, &new_hdr, Mode::Copy)?;
+    let new_name = modify_kcrmovie_text(&kcd, &new_hdr, Mode::Copy)?;
+    std::fs::rename(&new_name, new_name.with_file_name(format!("{}.kcd", &label)))?;
     move_videos(&hdr, &new_hdr, mode)
 }
 

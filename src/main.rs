@@ -102,7 +102,7 @@ fn main() -> Result<()> {
             input,
             source,
             mode,
-        } => modify_kcrmovie_text(input, source, mode),
+        } => modify_kcrmovie_text(input, source, mode).map(|_|()),
         Utils::Raf { input, kcd } => modify_raf_file(input, kcd),
         Utils::Hdr {
             input,
