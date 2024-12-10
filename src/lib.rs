@@ -119,10 +119,11 @@ fn find_kcrmovie_position<P: AsRef<Path>>(p: P) -> Result<usize> {
     Ok(res)
 }
 
-pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Result<()> {
+pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Result<PathBuf> {
     let kcd: &Path = kcd.as_ref();
     let hdr: &Path = hdr.as_ref();
-
+    
+    println!("Creating linking between KCD `{}` and HDR `{}`", kcd.display(), hdr.display());
     let file_stem = hdr
         .file_stem()
         .with_context(|| format!("output is not a valid name: {}", hdr.display()))?
@@ -143,7 +144,8 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
 
     reader.read_exact(header.as_mut())?;
 
-    let mut writer = BufWriter::new(File::create(kcd.with_extension(".kcd.modify"))?);
+    let out_kcd = kcd.with_extension("kcd.modify");
+    let mut writer = BufWriter::new(File::create(&out_kcd)?);
 
     writer.write_all(&header)?;
 
@@ -155,6 +157,7 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
     writer.write_all(&padding)?;
 
     reader.seek_relative(256)?;
+    
     while let Ok(buf) = reader.fill_buf() {
         if buf.is_empty() {
             break;
@@ -166,11 +169,11 @@ pub fn modify_kcrmovie_text<P: AsRef<Path>>(kcd: P, hdr: P, mode: Mode) -> Resul
     }
     match mode {
         Mode::Move => {
-            std::fs::remove_file(kcd).with_context(|| "Fail to remove original KCD file")?
+            std::fs::remove_file(kcd).with_context(|| "Fail to remove original KCD file")?;
         }
         Mode::Copy => (),
     }
-    Ok(())
+    Ok(out_kcd)
 }
 
 pub fn modify_raf_file<P: AsRef<Path>>(raf: P, kcd: P) -> Result<()> {
@@ -256,13 +259,15 @@ pub fn clone_kcd_with_videos(input: PathBuf, label: String, mode: Mode) -> Resul
     let cwd = kcd.parent().unwrap();
     let new_video_folder = cwd.join(&label);
     let _ = std::fs::create_dir(&new_video_folder);
-    let new_hdr = modify_video_hdr(&hdr, &label)?;
+    let from_hdr = modify_video_hdr(&hdr, &label)?;
+    let to_hdr = new_video_folder.join(from_hdr.file_name().unwrap());
     std::fs::rename(
-        &new_hdr,
-        new_video_folder.join(new_hdr.file_name().unwrap()),
+        &from_hdr,
+        &to_hdr,
     )?;
-    modify_kcrmovie_text(&kcd, &new_hdr, Mode::Copy)?;
-    move_videos(&hdr, &new_hdr, mode)
+    let new_kcd_name = modify_kcrmovie_text(&kcd, &from_hdr, Mode::Copy)?;
+    std::fs::rename(&new_kcd_name, new_kcd_name.with_file_name(format!("{}.kcd", &label)))?;
+    move_videos(&hdr, &to_hdr, mode)
 }
 
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
