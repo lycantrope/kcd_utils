@@ -8,11 +8,12 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anstream = ">0.6.8"
 anyhow = "1.0.77"
 clap = { version = "4.4.11", features = ["derive"] }
 clap-stdin = "0.3.0"
 deku = "0.16.0"
 glob = "0.3.1"
-indicatif = {version = "*", features = ["rayon"]}
+indicatif = { version = "*", features = ["rayon"] }
 patternscan = "1.2.0"
 regex = "1.10.2"
